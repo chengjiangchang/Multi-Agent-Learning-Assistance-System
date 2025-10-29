@@ -12,34 +12,23 @@ from sklearn.model_selection import train_test_split
 # --- 1. 设置项目路径 ---
 def setup_project_path():
     """
-    动态查找项目根目录 yl_data_process 并将 backend 添加到 sys.path
+    获取项目根目录（去掉了旧的 yl_data_process 查找逻辑）
     """
     try:
         current_path = os.path.dirname(os.path.abspath(__file__))
     except NameError:
         current_path = os.getcwd()
-
-    project_root = current_path
-    while os.path.basename(project_root) != 'yl_data_process':
-        parent_path = os.path.dirname(project_root)
-        if parent_path == project_root:
-            print("错误：无法找到项目根目录 'yl_data_process'。")
-            return None
-        project_root = parent_path
-
-    backend_path = os.path.join(project_root, 'backend')
-    if backend_path not in sys.path:
-        sys.path.append(backend_path)
-        print(f"成功将 '{backend_path}' 添加到系统路径。")
+    
+    # 项目根目录是 Code 文件夹的父目录
+    project_root = os.path.dirname(current_path)
+    print(f"项目根目录: {project_root}")
     return project_root
 
-# 设置路径并导入自定义模块
+# 设置路径
 PROJECT_ROOT = setup_project_path()
-if PROJECT_ROOT:
-    from data_script.llm_utils import user_sys_call_with_model, concurrent_user_sys_call_with_retry
-else:
-    user_sys_call_with_model = None
-    concurrent_user_sys_call_with_retry = None
+
+# 导入 LLM 工具函数
+from llms.qwen import user_sys_call as user_sys_call_with_model
 
 # --- Agent Model Config ---
 MODEL_NAME = "qwen-plus"  # 默认使用 Qwen-Plus 模型
@@ -53,7 +42,7 @@ def load_and_preprocess_data(project_root):
     print("\n" + "="*80)
     print("🔄 阶段 1/3: 数据加载与预处理".center(80))
     print("="*80)
-    data_path = os.path.join(project_root, 'backend/Agent4Edu/SelfDataProcess/data/')
+    data_path = os.path.join(project_root, 'data/')
     
     try:
         questions_df = pd.read_csv(os.path.join(data_path, "Questions.csv"))
