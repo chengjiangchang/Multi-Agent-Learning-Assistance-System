@@ -10,9 +10,9 @@ __pycache__/
 *.so
 
 # 实验结果和日志
-SelfDataProcess/results/*.pkl
-SelfDataProcess/results/*.log
-SelfDataProcess/results/*.txt
+results/*.pkl
+results/*.log
+results/*.txt
 *.log
 
 # Jupyter Notebook
