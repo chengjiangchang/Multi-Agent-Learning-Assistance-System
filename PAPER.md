@@ -200,6 +200,28 @@ Using LLM-based reasoning (Qwen-Plus), the agent analyzes:
 - 🟡 **Developing**: Partial understanding, inconsistent performance, needs improvement
 - 🔴 **Novice**: Limited understanding, frequent errors, low confidence
 
+**Assessment Results Distribution**: 
+
+We applied the mastery assessment agent to evaluate 141,656 student-concept pairs across 1,140 students and multiple knowledge components. Figure X illustrates the overall distribution of mastery levels and the variation across different knowledge concepts.
+
+<div align="center">
+<img src="pictures/mastery_level_distribution_minimal_assessment.png" alt="Mastery Level Distribution" width="900"/>
+
+**Figure X: Overall Mastery Level Distribution Across All Student-Concept Pairs**
+
+</div>
+
+The assessment reveals a balanced distribution: 40.2% Proficient, 33.9% Developing, 12.9% Mastered, and 12.9% Novice. This distribution indicates that most students demonstrate intermediate understanding (Proficient/Developing: 74.1%), while fewer reach complete mastery or show fundamental gaps, validating the assessment's ability to differentiate learning stages.
+
+<div align="center">
+<img src="pictures/mastery_level_by_kc_minimal_assessment.png" alt="Mastery Level by Knowledge Component" width="900"/>
+
+**Figure Y: Mastery Level Distribution by Knowledge Component (Top 20)**
+
+</div>
+
+Figure Y presents the mastery distribution across the 20 most frequently assessed knowledge concepts, revealing substantial variation in learning difficulty. Fundamental concepts like "Functional dependencies" show strong mastery (86.6% Proficient), while advanced topics like "Access Control" and "GRANT" exhibit higher proportions of Developing/Novice levels (63.2% and 75.9% respectively), reflecting their inherent complexity. This heterogeneity demonstrates that the assessment agent successfully captures concept-specific learning challenges, enabling targeted pedagogical interventions.
+
 **Integration**: The mastery assessments integrate into the student agent's long-term memory, enabling enhanced self-awareness and metacognitive reasoning.
 
 ---
