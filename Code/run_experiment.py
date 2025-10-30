@@ -140,7 +140,11 @@ def load_mastery_assessment_results(results_path, target_student_ids=None):
         return {}
 
     try:
-        mastery_df = pd.read_csv(results_path)
+        # 根据文件扩展名选择读取方式
+        if results_path.endswith('.pkl'):
+            mastery_df = pd.read_pickle(results_path)
+        else:
+            mastery_df = pd.read_csv(results_path)
     except Exception as e:
         print(f"加载掌握度评估结果失败: {e}")
         return {}
@@ -178,7 +182,11 @@ def load_tutoring_content_results(results_path, target_student_ids=None):
         return {}
 
     try:
-        tutoring_df = pd.read_csv(results_path)
+        # 根据文件扩展名选择读取方式
+        if results_path.endswith('.pkl'):
+            tutoring_df = pd.read_pickle(results_path)
+        else:
+            tutoring_df = pd.read_csv(results_path)
     except Exception as e:
         print(f"加载辅导内容结果失败: {e}")
         return {}
@@ -217,7 +225,7 @@ def load_tutoring_content_results(results_path, target_student_ids=None):
     return tutoring_lookup
 
 
-def calculate_expected_tutoring_pairs(student_ids, all_student_records, mastery_lookup=None):
+def calculate_expected_tutoring_pairs(student_ids, all_student_records, mastery_lookup=None, enable_test_kcs_optimization=True):
     """
     计算每个学生应该生成辅导内容的知识点列表。
     
@@ -225,6 +233,7 @@ def calculate_expected_tutoring_pairs(student_ids, all_student_records, mastery_
         student_ids: 学生ID列表
         all_student_records: 所有学生的做题记录 {student_id: DataFrame}
         mastery_lookup: 掌握度评估数据 {student_id: {kc_name: {...}}}
+        enable_test_kcs_optimization: 是否启用测试集优化（只为测试集涉及的知识点生成辅导）
     
     Returns:
         dict: {
@@ -245,7 +254,7 @@ def calculate_expected_tutoring_pairs(student_ids, all_student_records, mastery_
         
         # 数据划分（与 generate_tutoring_content.py 保持一致）
         if len(student_records_df) > 10:
-            train_df, _ = train_test_split(
+            train_df, test_df = train_test_split(
                 student_records_df, 
                 test_size=0.1, 
                 random_state=42, 
@@ -253,6 +262,13 @@ def calculate_expected_tutoring_pairs(student_ids, all_student_records, mastery_
             )
         else:
             train_df = student_records_df
+            test_df = pd.DataFrame()
+        
+        # 🔥 提取测试集涉及的知识点（如果启用优化）
+        if enable_test_kcs_optimization:
+            test_kcs = set(test_df['know_name'].dropna().unique()) if not test_df.empty else None
+        else:
+            test_kcs = None  # 不启用优化，生成所有薄弱KC
         
         # 识别薄弱知识点（与 generate_tutoring_content.py 逻辑一致）
         weak_kcs = []
@@ -270,6 +286,10 @@ def calculate_expected_tutoring_pairs(student_ids, all_student_records, mastery_
             if not wrong_df.empty:
                 kc_order = wrong_df['know_name'].value_counts().index.tolist()
                 weak_kcs = kc_order  # 不限制数量
+        
+        # 🔥 优化：只保留测试集涉及的知识点
+        if test_kcs:
+            weak_kcs = [kc for kc in weak_kcs if kc in test_kcs]
         
         # 记录该学生的薄弱知识点
         student_weak_kcs[student_id] = weak_kcs
@@ -510,9 +530,9 @@ def parse_tutoring_by_kc(llm_response, weak_kc_list):
     return parsed
 
 
-def _select_three_questions_for_kc(kc_name, kc_to_questions_map, test_question_ids, question_text_map, question_choices_df, max_num=3):
+def _select_three_questions_for_kc(kc_name, kc_to_questions_map, test_question_ids, question_text_map, question_choices_df, max_num=2):
     """
-    为指定知识点挑选最多3道题，并附带选项与正确答案文本。
+    为指定知识点挑选最多2道题，并附带选项与正确答案文本。
     
     题库选择逻辑：
     - 从该知识点的所有题目中排除测试集的题目
@@ -573,7 +593,7 @@ def _select_three_questions_for_kc(kc_name, kc_to_questions_map, test_question_i
 
 def build_tutoring_prompt_single_kc(student_id, kc_name, kc_description, example_questions):
     """
-    构建单个知识点的辅导提示词（优化版：每次只处理1个知识点 + 3道例题）
+    构建单个知识点的辅导提示词（优化版：每次只处理1个知识点 + 2道例题）
     
     从 generate_tutoring_content.py 导入，避免重复代码
     
@@ -581,7 +601,7 @@ def build_tutoring_prompt_single_kc(student_id, kc_name, kc_description, example
         student_id: 学生ID
         kc_name: 知识点名称
         kc_description: 知识点描述
-        example_questions: 3道例题列表（包含题干、选项、答案）
+        example_questions: 2道例题列表（包含题干、选项、答案）
     
     Returns:
         tuple: (system_prompt, user_prompt)
@@ -653,7 +673,7 @@ def build_tutoring_agent_prompt(student_id, weak_kc_list, kc_descriptions, kc_to
             test_question_ids,  # ← 只排除测试集
             question_text_map,
             question_choices_df,
-            max_num=3
+            max_num=2
         )
         if not picked:
             continue
@@ -1127,8 +1147,6 @@ async def create_concurrent_llm_requests(requests, concurrency_limit=30, spread_
                             model_name=req.get('model_name', MODEL_NAME)
                         )
                         # 成功
-                        if (index + 1) % 100 == 0:  # 每100个打印一次
-                            print(f"   ✅ [{index+1}/{len(requests)}] 进度更新 - 学生{student_id}")
                         return {"index": index, "result": result, "error": None}
                     else:
                         # 重试
@@ -1160,9 +1178,35 @@ async def create_concurrent_llm_requests(requests, concurrency_limit=30, spread_
         start_delay = i * delay_per_request if spread_duration > 0 else 0
         tasks.append(execute_single_request(req, i, start_delay))
     
-    # 并发执行所有任务
+    # 并发执行所有任务（带实时进度条）
     print(f"\n⏳ 开始执行 {len(tasks)} 个请求...\n")
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # 使用 tqdm 显示实时进度
+    pbar = tqdm(total=len(tasks), desc="🚀 LLM 请求", unit="题", mininterval=0.5)
+    completed_count = 0
+    
+    # 创建结果数组（预分配，保持索引顺序）
+    results = [None] * len(tasks)
+    
+    for future in asyncio.as_completed(tasks):
+        result = await future
+        completed_count += 1
+        
+        # 将结果放到正确的位置（按index排序）
+        if isinstance(result, dict) and 'index' in result:
+            results[result['index']] = result
+        else:
+            # 异常情况，直接添加
+            results[completed_count - 1] = result
+        
+        pbar.update(1)
+        
+        # 每50个打印一次详细信息
+        if completed_count % 50 == 0:
+            success = sum(1 for r in results[:completed_count] if r and not isinstance(r, Exception) and r.get('error') is None)
+            pbar.write(f"   📊 进度: {completed_count}/{len(tasks)} | 成功率: {success/completed_count:.1%}")
+    
+    pbar.close()
     
     # 处理异常结果
     processed_results = []
@@ -1450,9 +1494,23 @@ async def run_experiment(student_ids, all_student_records, concurrency_limit, pr
                         
                         tutoring_dict[kc_name] = content
                     
-                    # 🔥 使用 tqdm.write 避免干扰进度条
+                    # 🔥 改进：检查测试集KC的完整性
+                    test_kcs = set(test_df['know_name'].dropna().unique()) if not test_df.empty else set()
+                    available_kcs = set(tutoring_dict.keys())
+                    missing_kcs = test_kcs - available_kcs
+                    
                     if len(tutoring_dict) > 0:
-                        pbar.write(f"   ✅ 学生 {student_id}: 已加载 {len(tutoring_dict)} 个知识点的辅导内容")
+                        if missing_kcs:
+                            # 部分KC缺失
+                            pbar.write(f"   ⚠️  学生 {student_id}: 已加载 {len(tutoring_dict)} 个KC辅导，但缺少 {len(missing_kcs)} 个测试集KC: {list(missing_kcs)[:3]}...")
+                            skipped_students.append(student_id)  # 记录为不完整
+                        else:
+                            # 所有测试集KC都有辅导
+                            pbar.write(f"   ✅ 学生 {student_id}: 已加载 {len(tutoring_dict)} 个知识点的辅导内容（测试集完整覆盖）")
+                    else:
+                        # 有学生记录但没有任何辅导内容
+                        pbar.write(f"   ⚠️  学生 {student_id}: 辅导内容为空")
+                        skipped_students.append(student_id)
                 else:
                     # 🔥 如果没有预加载数据，使用空字典（退化为 baseline）
                     tutoring_dict = {}  # 空字典，不会添加辅导内容到 Prompt
@@ -1558,17 +1616,21 @@ async def run_experiment(student_ids, all_student_records, concurrency_limit, pr
     print(f"\n✅ 请求收集完成")
     print(f"   📊 总学生数: {len(student_ids)} 个")
     print(f"   ✅ 成功准备: {successful_students} 个学生")
-    print(f"   ⚠️  缺辅导数据: {len(skipped_students)} 个学生（已退化为 baseline）")
+    print(f"   ⚠️  辅导数据不完整: {len(skipped_students)} 个学生（已退化为 baseline 或部分退化）")
     print(f"   📝 总请求数: {total_requests} 个")
     
     if skipped_students:
-        print(f"\n⚠️  以下学生缺少预加载辅导内容（已自动退化为 baseline 模式）:")
+        print(f"\n⚠️  以下学生的辅导数据存在问题（原因：完全缺失或部分KC缺失）:")
         if len(skipped_students) <= 20:
-            print(f"   {skipped_students}")
+            print(f"   学生ID: {skipped_students}")
         else:
-            print(f"   {skipped_students[:20]} ... 还有 {len(skipped_students) - 20} 个")
-        print(f"\n💡 提示: 这些学生会继续运行实验（等同于 baseline），如需辅导内容请运行:")
-        print(f"   python generate_tutoring_content.py --student-ids {','.join(map(str, skipped_students[:5]))}... --use-mastery")
+            print(f"   学生ID: {skipped_students[:20]} ... 还有 {len(skipped_students) - 20} 个")
+        print(f"\n💡 说明:")
+        print(f"   • 这些学生会继续运行实验（缺失的KC部分等同于 baseline）")
+        print(f"   • 完全缺失辅导 → 整个学生退化为 baseline 模式")
+        print(f"   • 部分KC缺失辅导 → 只有缺失的KC使用 baseline，其他KC正常使用辅导")
+        print(f"\n💡 如需补充辅导内容，请运行:")
+        print(f"   python generate_tutoring_content.py --student-ids {','.join(map(str, skipped_students[:5]))}{'...' if len(skipped_students) > 5 else ''} --use-mastery")
     
     if total_requests == 0:
         print(f"\n❌ 没有可执行的请求，实验终止")
@@ -2765,6 +2827,10 @@ async def main():
                        help="每完成多少个学生保存一次结果。默认20。")
     parser.add_argument("--no-resume", action="store_true",
                        help="禁用断点续跑：不加载已有结果，从头开始运行所有学生。")
+    parser.add_argument("--test-kcs-only", action="store_true", default=True,
+                       help="辅导内容生成优化：仅为测试集涉及的知识点生成辅导（默认启用，节省LLM调用）。")
+    parser.add_argument("--all-weak-kcs", action="store_true",
+                       help="辅导内容生成：为所有薄弱知识点生成辅导（禁用优化，生成全部）。")
     args = parser.parse_args()
     
     # 如果用户指定了模型名称，覆盖默认值
@@ -2774,6 +2840,13 @@ async def main():
         print(f"\n🤖 使用指定模型: {MODEL_NAME}")
     else:
         print(f"\n🤖 使用默认模型: {MODEL_NAME}")
+    
+    # 确定是否启用测试集优化
+    enable_test_kcs_optimization = args.test_kcs_only and not args.all_weak_kcs
+    if enable_test_kcs_optimization:
+        print(f"🎯 辅导内容优化: 仅为测试集涉及的知识点生成辅导（节省LLM调用）")
+    else:
+        print(f"📚 辅导内容完整: 为所有薄弱知识点生成辅导")
 
     if not user_sys_call_with_model:
         print("LLM工具模块未能加载，请检查项目路径。脚本退出。")
@@ -2953,10 +3026,10 @@ async def main():
             # 生成带模型名称的文件后缀
             safe_model_name = MODEL_NAME.replace('/', '_').replace('.', '_')
             
-            # 检查是否需要重新运行辅导内容生成
+            # 检查是否需要重新运行辅导内容生成（使用 pickle 格式）
             tutoring_path = os.path.join(
                 PROJECT_ROOT,
-                f'results/tutoring_content_results_{safe_model_name}.csv'
+                f'results/tutoring_content_results_{safe_model_name}.pkl'
             )
             
             # 🔥 优化：按"学生 + 知识点"维度检查辅导内容数据的完整性
@@ -2965,14 +3038,17 @@ async def main():
             
             if os.path.exists(tutoring_path) and not needs_rerun:
                 try:
-                    tutoring_df = pd.read_csv(tutoring_path)
+                    # 使用 pickle 读取
+                    tutoring_df = pd.read_pickle(tutoring_path)
+                    print(f"✅ 已加载辅导内容数据: {len(tutoring_df)} 条记录")
                     
                     # 🔥 新逻辑：计算期望的辅导对
                     print(f"\n🔍 正在计算期望的辅导内容...")
                     expected_result = calculate_expected_tutoring_pairs(
                         student_ids, 
                         all_student_records, 
-                        mastery_lookup
+                        mastery_lookup,
+                        enable_test_kcs_optimization
                     )
                     expected_pairs = expected_result['expected_pairs']
                     student_weak_kcs_map = expected_result['student_weak_kcs']
@@ -3059,6 +3135,13 @@ async def main():
                 if mastery_lookup:
                     cmd.append('--use-mastery')
                 
+                # 传递优化标志
+                if args.all_weak_kcs:
+                    cmd.append('--all-weak-kcs')
+                elif not args.test_kcs_only:
+                    # 如果用户明确禁用了测试集优化，也传递给子脚本
+                    pass  # 默认就是启用的，不需要额外传参
+                
                 try:
                     # 🔥 使用异步子进程，实时输出日志（与 mastery_only 保持一致）
                     proc = await asyncio.create_subprocess_exec(*cmd)
@@ -3097,36 +3180,6 @@ async def main():
     for exp_mode in experiment_modes:
         # 断点续跑（默认开启）：加载已有结果并过滤学生
         # 文件名包含模型名称，避免不同模型结果互相覆盖
-        # 注意：safe_model_name 已在上面定义，这里复用即可
-        if 'safe_model_name' not in locals():
-            safe_model_name = MODEL_NAME.replace('/', '_').replace('.', '_')  # 处理特殊字符
-        results_pkl_path = os.path.join(output_dir, f'experiment_results_{exp_mode}_{safe_model_name}.pkl')
-        completed_student_ids = set()
-        existing_results_df = None
-        
-        # 默认启用断点续跑，除非用户指定 --no-resume
-        if not args.no_resume and os.path.exists(results_pkl_path):
-            try:
-                existing_results_df = pd.read_pickle(results_pkl_path)
-                completed_student_ids = set(existing_results_df['student_id'].unique())
-                print(f"\n📂 检测到已有结果，启用断点续跑")
-                print(f"   📁 文件路径: {results_pkl_path}")
-                print(f"   ✅ 已完成学生数: {len(completed_student_ids)}")
-                print(f"   📊 已有数据行数: {len(existing_results_df)}")
-            except Exception as e:
-                print(f"\n⚠️  加载已有结果失败，将从头开始: {e}")
-                existing_results_df = None
-        
-        # 过滤出待运行的学生
-        remaining_student_ids = [sid for sid in student_ids if sid not in completed_student_ids]
-        
-        if not remaining_student_ids:
-            print(f"\n✅ {exp_mode.upper()} 实验已全部完成，跳过")
-            if existing_results_df is not None:
-                existing_results_df['experiment_mode'] = actual_mode  # 🔥 使用实际模式标签
-                all_experiments_results.append(existing_results_df)
-            continue
-        
         # 配置实验参数（包含 Both 模式降级逻辑）- 必须先执行以确定 actual_mode
         if exp_mode == "baseline":
             use_mastery = False
@@ -3181,6 +3234,37 @@ async def main():
                 actual_mode = "both"  # 完整的 both 模式
         else:
             actual_mode = exp_mode  # 其他模式保持不变
+        
+        # 断点续跑逻辑（在确定 actual_mode 之后）
+        # 注意：safe_model_name 已在上面定义，这里复用即可
+        if 'safe_model_name' not in locals():
+            safe_model_name = MODEL_NAME.replace('/', '_').replace('.', '_')  # 处理特殊字符
+        results_pkl_path = os.path.join(output_dir, f'experiment_results_{exp_mode}_{safe_model_name}.pkl')
+        completed_student_ids = set()
+        existing_results_df = None
+        
+        # 默认启用断点续跑，除非用户指定 --no-resume
+        if not args.no_resume and os.path.exists(results_pkl_path):
+            try:
+                existing_results_df = pd.read_pickle(results_pkl_path)
+                completed_student_ids = set(existing_results_df['student_id'].unique())
+                print(f"\n📂 检测到已有结果，启用断点续跑")
+                print(f"   📁 文件路径: {results_pkl_path}")
+                print(f"   ✅ 已完成学生数: {len(completed_student_ids)}")
+                print(f"   📊 已有数据行数: {len(existing_results_df)}")
+            except Exception as e:
+                print(f"\n⚠️  加载已有结果失败，将从头开始: {e}")
+                existing_results_df = None
+        
+        # 过滤出待运行的学生
+        remaining_student_ids = [sid for sid in student_ids if sid not in completed_student_ids]
+        
+        if not remaining_student_ids:
+            print(f"\n✅ {exp_mode.upper()} 实验已全部完成，跳过")
+            if existing_results_df is not None:
+                existing_results_df['experiment_mode'] = actual_mode  # 🔥 使用实际模式标签
+                all_experiments_results.append(existing_results_df)
+            continue
         
         print(f"\n📋 {exp_mode.upper()} 实验进度:")
         print(f"   • 已完成: {len(completed_student_ids)} 个学生")
@@ -3306,30 +3390,30 @@ async def main():
     print("="*80)
     generate_three_mode_comparison_report(combined_results_df, output_dir)
 
-    # 5. 保存输入输出案例（找3个同时有掌握度和辅导内容的学生）
-    if mastery_lookup and tutoring_lookup:
-        try:
-            save_in_out_cases(
-                combined_results_df,
-                output_dir,
-                all_student_records,
-                kcs_df,
-                kc_relationships_df,
-                kc_to_questions_map,
-                question_text_map,
-                kc_descriptions,
-                question_choices_df,
-                mastery_lookup,
-                tutoring_lookup,
-                related_kc_map,
-                all_kc_names
-            )
-        except Exception as e:
-            print(f"\n⚠️  保存输入输出案例失败: {e}")
-            import traceback
-            traceback.print_exc()
-    else:
-        print("\n⚠️  跳过案例保存：缺少掌握度或辅导内容数据")
+    # 5. 保存输入输出案例（暂时禁用）
+    # if mastery_lookup and tutoring_lookup:
+    #     try:
+    #         save_in_out_cases(
+    #             combined_results_df,
+    #             output_dir,
+    #             all_student_records,
+    #             kcs_df,
+    #             kc_relationships_df,
+    #             kc_to_questions_map,
+    #             question_text_map,
+    #             kc_descriptions,
+    #             question_choices_df,
+    #             mastery_lookup,
+    #             tutoring_lookup,
+    #             related_kc_map,
+    #             all_kc_names
+    #         )
+    #     except Exception as e:
+    #         print(f"\n⚠️  保存输入输出案例失败: {e}")
+    #         import traceback
+    #         traceback.print_exc()
+    # else:
+    #     print("\n⚠️  跳过案例保存：缺少掌握度或辅导内容数据")
 
     # 输出上下文快照，便于对比掌握度与辅导摘要（仅保存 CSV）
     summary_columns = ['student_id', 'question_id', 'true_know_name', 'experiment_type', 'experiment_mode', 'mastery_summary', 'tutoring_summary']

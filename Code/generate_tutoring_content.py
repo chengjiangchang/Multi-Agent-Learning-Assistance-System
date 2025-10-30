@@ -101,19 +101,36 @@ def load_and_preprocess_data(project_root):
 
 # --- 3. 辅导内容生成核心函数 ---
 
-def _truncate_text(text, max_length=150):
-    """截断文本到指定长度"""
+def _truncate_text(text, max_length=400):
+    """
+    智能截断文本：超过max_length时保留前后部分
+    
+    Args:
+        text: 原始文本
+        max_length: 最大长度阈值，默认400字符
+    
+    Returns:
+        截断后的文本，格式：[前200字符] ... [后200字符]
+    """
     if not isinstance(text, str):
         return ''
+    
     text = text.strip()
-    if len(text) > max_length:
-        return text[:max_length] + "..."
-    return text
+    
+    if len(text) <= max_length:
+        return text
+    
+    # 超过阈值，截取前后各一半
+    half_length = max_length // 2
+    front_part = text[:half_length].strip()
+    back_part = text[-half_length:].strip()
+    
+    return f"{front_part} ... {back_part}"
 
 
-def _select_three_questions_for_kc(kc_name, kc_to_questions_map, test_question_ids, question_text_map, question_choices_df, max_num=3):
+def _select_three_questions_for_kc(kc_name, kc_to_questions_map, test_question_ids, question_text_map, question_choices_df, max_num=2):
     """
-    为指定知识点挑选最多3道题，并附带选项与正确答案文本。
+    为指定知识点挑选最多2道题，并附带选项与正确答案文本。
     
     题库选择逻辑：
     - 从该知识点的所有题目中排除测试集的题目
@@ -175,13 +192,13 @@ def _select_three_questions_for_kc(kc_name, kc_to_questions_map, test_question_i
 
 def build_tutoring_prompt_single_kc(student_id, kc_name, kc_description, example_questions):
     """
-    构建单个知识点的辅导提示词（优化版：每次只处理1个知识点 + 3道例题）
+    构建单个知识点的辅导提示词（优化版：每次只处理1个知识点 + 2道例题）
     
     Args:
         student_id: 学生ID
         kc_name: 知识点名称
         kc_description: 知识点描述
-        example_questions: 3道例题列表（包含题干、选项、答案）
+        example_questions: 2道例题列表（包含题干、选项、答案）
     
     Returns:
         tuple: (system_prompt, user_prompt)
@@ -330,12 +347,12 @@ def identify_weak_kcs(student_records_df, mastery_lookup=None, student_id=None):
 
 def save_results_batch(batch_results, results_path, is_first_batch=False):
     """
-    批量保存辅导内容结果（追加模式）
+    批量保存辅导内容结果（追加模式，使用 pickle）
     
     Args:
         batch_results: 待保存的结果列表
-        results_path: 结果CSV文件路径
-        is_first_batch: 是否是第一批（决定是否写入表头）
+        results_path: 结果 pickle 文件路径
+        is_first_batch: 是否是第一批（决定是否创建新文件）
     """
     if not batch_results:
         return
@@ -344,11 +361,15 @@ def save_results_batch(batch_results, results_path, is_first_batch=False):
     
     try:
         if is_first_batch or not os.path.exists(results_path):
-            # 首次保存，写入表头
-            batch_df.to_csv(results_path, index=False, encoding='utf-8-sig', mode='w')
+            # 首次保存，创建新文件
+            combined_df = batch_df
         else:
-            # 追加模式，不写表头
-            batch_df.to_csv(results_path, index=False, encoding='utf-8-sig', mode='a', header=False)
+            # 追加模式，读取已有数据并合并
+            existing_df = pd.read_pickle(results_path)
+            combined_df = pd.concat([existing_df, batch_df], ignore_index=True)
+        
+        # 保存为 pickle
+        combined_df.to_pickle(results_path)
         
         print(f"   💾 已保存 {len(batch_results)} 条结果到文件")
     except Exception as e:
@@ -371,12 +392,12 @@ async def generate_tutoring_for_single_kc(student_id, kc_name, test_question_ids
     """
     # 1. 获取该知识点的例题（排除测试集，可包含训练集）
     picked = _select_three_questions_for_kc(
-        kc_name,
-        kc_to_questions_map,
+        kc_name, 
+        kc_to_questions_map, 
         test_question_ids,
         question_text_map,
         question_choices_df,
-        max_num=3
+        max_num=2
     )
     
     if not picked:
@@ -542,7 +563,7 @@ async def main():
         model_suffix = MODEL_NAME.replace('/', '_').replace('.', '_')
         mastery_path = os.path.join(
             PROJECT_ROOT,
-            f'backend/Agent4Edu/SelfDataProcess/results/mastery_assessment_results_minimal_{model_suffix}.csv'
+            f'results/mastery_assessment_results_minimal_{model_suffix}.csv'
         )
         if os.path.exists(mastery_path):
             try:
@@ -572,21 +593,22 @@ async def main():
     # 生成带模型名称的文件后缀
     model_suffix = MODEL_NAME.replace('/', '_').replace('.', '_')
     
-    # 文件路径
-    results_path = os.path.join(output_dir, f'tutoring_content_results_{model_suffix}.csv')
+    # 文件路径（使用 pickle 格式）
+    results_path = os.path.join(output_dir, f'tutoring_content_results_{model_suffix}.pkl')
     log_path = os.path.join(output_dir, f'tutoring_generation_logs_{model_suffix}.txt')
     
     # 🔥 检查已完成的 (student_id, kc_name) 对
     processed_pairs = set()
     if os.path.exists(results_path):
         try:
-            existing_df = pd.read_csv(results_path)
+            # 使用 pickle 读取，速度更快
+            existing_df = pd.read_pickle(results_path)
             # 构建已有的 (student_id, kc_name) 集合
             for _, row in existing_df.iterrows():
                 processed_pairs.add((row['student_id'], row['kc_name']))
             
             processed_students = set(existing_df['student_id'].unique())
-            print(f"\n✅ 检测到已有辅导内容数据")
+            print(f"\n✅ 检测到已有辅导内容数据 (pkl格式)")
             print(f"   已完成学生数: {len(processed_students)}")
             print(f"   已完成辅导对数: {len(processed_pairs)}")
         except Exception as e:
@@ -656,89 +678,125 @@ async def main():
             print(f"   • 学生 {sid}: 缺失 {len(missing_kcs)}/{len(weak_kcs)} 个知识点")
         print(f"   ... 还有 {len(pending_students) - 5} 个学生未显示")
     
-    # 4. 批量生成辅导内容
+    # 4. 批量生成辅导内容（改为 KC 级别并发）
     print(f"\n{'='*80}")
-    print(f"🚀 开始生成辅导内容".center(80))
+    print(f"🚀 开始生成辅导内容（KC级别并发）".center(80))
     print(f"{'='*80}")
     
     all_results = []
-    batch_size = 10  # 每10个学生保存一次
+    save_every_n_kcs = 100  # 🔥 改为每完成100个KC保存一次
+    kcs_since_last_save = 0
     is_first_batch = not os.path.exists(results_path)
+    completed_kcs = 0
     
     # 使用 Semaphore 控制并发
     semaphore = asyncio.Semaphore(args.concurrency)
     
-    async def process_student_with_delay(student_id, delay):
-        """处理单个学生（带延迟和并发控制）"""
+    async def process_single_kc(student_id, kc_name, delay):
+        """🔥 处理单个(学生, KC)对 - KC级别并发"""
         if delay > 0:
             await asyncio.sleep(delay)
         
         async with semaphore:
             try:
                 student_records_df = all_student_records[student_id]
-                results = await generate_tutoring_for_student(
-                    student_id,
-                    student_records_df,
-                    kc_to_questions_map,
-                    question_text_map,
-                    kc_descriptions,
-                    question_choices_df,
-                    mastery_lookup,
-                    processed_pairs  # 🔥 传递已完成的辅导对
+                
+                # 数据划分
+                if len(student_records_df) > 10:
+                    train_df, test_df = train_test_split(
+                        student_records_df, 
+                        test_size=0.1, 
+                        random_state=42, 
+                        shuffle=True
+                    )
+                else:
+                    train_df = student_records_df
+                    test_df = pd.DataFrame()
+                
+                test_question_ids = set(test_df['question_id'].tolist()) if not test_df.empty else set()
+                
+                # 🔥 为单个KC生成辅导内容（超时120秒）
+                result = await asyncio.wait_for(
+                    generate_tutoring_for_single_kc(
+                        student_id,
+                        kc_name,
+                        test_question_ids,
+                        kc_to_questions_map,
+                        question_text_map,
+                        kc_descriptions,
+                        question_choices_df
+                    ),
+                    timeout=9999  # 🔥 增加到180秒（3分钟）
                 )
-                return (student_id, results, None)
+                return (student_id, kc_name, result, None)
+            except asyncio.TimeoutError:
+                return (student_id, kc_name, None, "超时(120s)")
             except Exception as e:
-                return (student_id, [], str(e))
+                return (student_id, kc_name, None, f"{type(e).__name__}: {str(e)}")
     
-    # 创建任务（带削峰填谷）
+    # 🔥 创建任务：按(学生, KC)对维度
+    print(f"\n📦 准备异步任务（KC级别并发）...")
+    print(f"   • 总KC对数: {len(missing_pairs)}")
+    print(f"   • 并发度: {args.concurrency}")
+    
     tasks = []
     if args.spread_duration > 0:
-        delay_per_student = args.spread_duration / len(pending_students)
-        for i, student_id in enumerate(pending_students):
-            delay = i * delay_per_student
-            tasks.append(process_student_with_delay(student_id, delay))
+        # 在指定时间内均匀分布所有KC任务
+        max_spread = min(args.spread_duration, 300)  # 最多5分钟
+        delay_per_kc = max_spread / len(missing_pairs)
+        print(f"   • 削峰填谷: {max_spread}秒内均匀分布 (每KC延迟 {delay_per_kc*1000:.1f}ms)")
+        
+        for i, (student_id, kc_name) in enumerate(missing_pairs):
+            delay = i * delay_per_kc
+            tasks.append(process_single_kc(student_id, kc_name, delay))
     else:
-        for student_id in pending_students:
-            tasks.append(process_student_with_delay(student_id, 0))
+        print(f"   • 并发模式: 无延迟，立即启动")
+        for student_id, kc_name in missing_pairs:
+            tasks.append(process_single_kc(student_id, kc_name, 0))
     
-    # 并发执行
-    completed_count = 0
-    for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="生成辅导内容"):
-        student_id, results, error = await future
-        completed_count += 1
+    print(f"✅ 任务创建完成，开始并发执行...\n")
+    
+    # 🔥 并发执行：每完成一个KC更新一次进度条
+    import time
+    last_update_time = time.time()
+    pbar = tqdm(total=len(missing_pairs), desc="生成知识点辅导", unit="KC", mininterval=0.1)
+    
+    # 心跳监控
+    async def heartbeat_monitor():
+        nonlocal last_update_time
+        while True:
+            await asyncio.sleep(10)
+            elapsed = time.time() - last_update_time
+            if elapsed > 30:
+                pbar.write(f"⏰ 心跳检测: 已 {elapsed:.0f}s 无进展...")
+    
+    heartbeat_task = asyncio.create_task(heartbeat_monitor())
+    pbar.write("🚀 进度条已启动，开始处理任务...")
+    
+    # 🔥 逐个处理完成的任务
+    for future in asyncio.as_completed(tasks):
+        student_id, kc_name, result, error = await future
+        last_update_time = time.time()
         
         if error:
-            print(f"\n   ❌ 学生 {student_id} 处理失败: {error}")
-            # 记录错误日志
-            try:
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(f"--- FAILED: Student {student_id} ---\n")
-                    f.write(f"Error: {error}\n")
-                    f.write("="*80 + "\n\n")
-            except:
-                pass
-        else:
-            if results:
-                all_results.extend(results)
-                print(f"\n   ✅ 学生 {student_id}: 生成了 {len(results)} 个知识点的辅导内容")
-                
-                # 记录成功日志（简化版）
-                try:
-                    with open(log_path, "a", encoding="utf-8") as f:
-                        f.write(f"--- SUCCESS: Student {student_id} ---\n")
-                        f.write(f"Generated {len(results)} KC tutoring contents\n")
-                        f.write(f"KCs: {', '.join([r['kc_name'] for r in results])}\n")
-                        f.write("="*80 + "\n\n")
-                except:
-                    pass
-            else:
-                print(f"\n   ⚠️  学生 {student_id}: 无薄弱知识点或无可用题目")
+            pbar.write(f"   ❌ 学生{student_id}-KC[{kc_name}] 失败: {error}")
+        elif result:
+            all_results.append(result)
+            kcs_since_last_save += 1
         
-        # 批量保存
-        if len(all_results) >= batch_size:
+        # 🔥 更新进度条
+        pbar.update(1)
+        
+        # 🔥 每完成100个KC保存一次
+        if kcs_since_last_save >= save_every_n_kcs:
             save_results_batch(all_results, results_path, is_first_batch)
+            pbar.write(f"💾 已保存 {len(all_results)} 条记录（{kcs_since_last_save} 个KC）")
             all_results = []
+            kcs_since_last_save = 0
             is_first_batch = False
+    
+    pbar.close()
+    heartbeat_task.cancel()
     
     # 保存剩余结果
     if all_results:
@@ -752,12 +810,16 @@ async def main():
     
     # 统计信息
     if os.path.exists(results_path):
-        final_df = pd.read_csv(results_path)
+        final_df = pd.read_pickle(results_path)
         print(f"\n📊 统计信息:")
         print(f"   • 总学生数: {final_df['student_id'].nunique()}")
         print(f"   • 总知识点数: {final_df['kc_name'].nunique()}")
         print(f"   • 总记录数: {len(final_df)}")
         print(f"   • 平均每学生辅导知识点数: {len(final_df) / final_df['student_id'].nunique():.1f}")
+        
+        # 显示文件大小
+        pkl_size = os.path.getsize(results_path) / (1024 * 1024)
+        print(f"   • 文件大小: {pkl_size:.2f} MB")
 
 
 if __name__ == "__main__":
