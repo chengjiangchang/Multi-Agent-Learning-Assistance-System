@@ -349,13 +349,13 @@ We conducted controlled experiments on 16,775 test samples from 1,140 students, 
 
 **📊 Comprehensive Results Summary**
 
-| Experimental Mode         | Task 1: Self-Prediction   |                           | Task 4: Answer Selection  |                 | Task 2: KC Recognition |
-| ------------------------- | ------------------------- | ------------------------- | ------------------------- | --------------- | ---------------------- |
-|                           | **ACC**             | **F1**              | **ACC**             | **F1**    | **ACC**          |
-| **Baseline**        | 73.14%                    | 0.7016                    | 82.65%                    | 0.6830          | 97.68%                 |
-| **Mastery Only**    | **82.67%** (+9.53%) | **0.8239** (+17.4%) | 85.38% (+2.73%)           | 0.6711 (-1.74%) | 97.84% (+0.16%)        |
-| **Tutoring Only**   | 72.25% (-0.89%)           | 0.6752 (-3.76%)           | 84.27% (+1.62%)           | 0.6727 (-1.51%) | 97.80% (+0.12%)        |
-| **Both (Combined)** | 78.00% (+4.86%)           | 0.7247 (+3.29%)           | **86.53%** (+3.88%) | 0.6696 (-1.96%) | 97.82% (+0.14%)        |
+| Experimental Mode         | Task 1: Self-Prediction   |                           | Task 4: Answer Selection  |                 |
+| ------------------------- | ------------------------- | ------------------------- | ------------------------- | --------------- |
+|                           | **ACC**             | **F1**              | **ACC**             | **F1**    |
+| **Baseline**        | 73.14%                    | 0.7016                    | 82.65%                    | 0.6830          |
+| **Mastery Only**    | **82.67%** (+9.53%) | **0.8239** (+17.4%) | 85.38% (+2.73%)           | 0.6711 (-1.74%) |
+| **Tutoring Only**   | 72.25% (-0.89%)           | 0.6752 (-3.76%)           | 84.27% (+1.62%)           | 0.6727 (-1.51%) |
+| **Both (Combined)** | 78.00% (+4.86%)           | 0.7247 (+3.29%)           | **86.53%** (+3.88%) | 0.6696 (-1.96%) |
 
 *Note: ACC = Accuracy, F1 = F1-Score. Percentages in parentheses show relative change from Baseline.*
 
@@ -393,7 +393,6 @@ Personalized tutoring primarily targets **problem-solving performance** by provi
 
 - **+1.62% improvement** in answer accuracy demonstrates that short-term tutoring interventions enhance immediate problem-solving performance
 - F1-score decrease suggests the improvement is not uniformly distributed across all answer choices, potentially indicating selective benefit for certain problem types
-- Concept identification accuracy improved marginally (+0.12%), reaching 97.80%
 
 **Interpretation**: Tutoring interventions provide actionable problem-solving strategies that transfer to new questions within the same knowledge domain. However, the modest F1-score suggests that tutoring effectiveness varies across different question contexts, highlighting the need for more adaptive content delivery.
 
@@ -536,8 +535,6 @@ Our comprehensive ablation study across four experimental conditions reveals dis
 - **Mechanism**: Synergistic integration of conceptual awareness and procedural strategies
 - **Best for**: Comprehensive learning support requiring both understanding and execution
 - **Trade-off**: Intermediate metacognitive performance (78.00%), suggesting optimization opportunities
-
-**Concept Identification (Task 2)**: Consistently high across all conditions (97.68%-97.84%), indicating that basic curriculum structure recognition is well-established and less sensitive to memory augmentation.
 
 **Key Insights**:
 
