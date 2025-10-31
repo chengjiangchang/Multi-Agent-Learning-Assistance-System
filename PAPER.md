@@ -186,7 +186,7 @@ These outputs are compared against ground truth to evaluate the agent's simulati
 2. **Evidence Section**: Detailed exam performance records for the target concept (sorted chronologically)
 3. **Task Instruction**: Evaluate mastery level based on performance patterns, consistency, and behavioral signals
 
-Using LLM-based reasoning (Qwen-Plus), the agent analyzes:
+Using LLM-based reasoning, the agent analyzes:
 
 - Overall accuracy rate and error patterns
 - Performance consistency across varying difficulty levels
@@ -200,27 +200,18 @@ Using LLM-based reasoning (Qwen-Plus), the agent analyzes:
 - 🟡 **Developing**: Partial understanding, inconsistent performance, needs improvement
 - 🔴 **Novice**: Limited understanding, frequent errors, low confidence
 
-**Assessment Results Distribution**: 
+**Assessment Results Distribution**:
 
-We applied the mastery assessment agent to evaluate 141,656 student-concept pairs across 1,140 students and multiple knowledge components. Figure X illustrates the overall distribution of mastery levels and the variation across different knowledge concepts.
+We applied the mastery assessment agent to evaluate 141,656 student-concept pairs across 1,140 students and multiple knowledge components. Figure 2 illustrates the overall distribution of mastery levels and the variation across different knowledge concepts.
 
 <div align="center">
 <img src="pictures/mastery_level_distribution_minimal_assessment.png" alt="Mastery Level Distribution" width="900"/>
 
-**Figure X: Overall Mastery Level Distribution Across All Student-Concept Pairs**
+**Figure 2: Overall Mastery Level Distribution Across All Student-Concept Pairs**
 
 </div>
 
 The assessment reveals a balanced distribution: 40.2% Proficient, 33.9% Developing, 12.9% Mastered, and 12.9% Novice. This distribution indicates that most students demonstrate intermediate understanding (Proficient/Developing: 74.1%), while fewer reach complete mastery or show fundamental gaps, validating the assessment's ability to differentiate learning stages.
-
-<div align="center">
-<img src="pictures/mastery_level_by_kc_minimal_assessment.png" alt="Mastery Level by Knowledge Component" width="900"/>
-
-**Figure Y: Mastery Level Distribution by Knowledge Component (Top 20)**
-
-</div>
-
-Figure Y presents the mastery distribution across the 20 most frequently assessed knowledge concepts, revealing substantial variation in learning difficulty. Fundamental concepts like "Functional dependencies" show strong mastery (86.6% Proficient), while advanced topics like "Access Control" and "GRANT" exhibit higher proportions of Developing/Novice levels (63.2% and 75.9% respectively), reflecting their inherent complexity. This heterogeneity demonstrates that the assessment agent successfully captures concept-specific learning challenges, enabling targeted pedagogical interventions.
 
 **Integration**: The mastery assessments integrate into the student agent's long-term memory, enabling enhanced self-awareness and metacognitive reasoning.
 
@@ -232,19 +223,17 @@ Figure Y presents the mastery distribution across the 20 most frequently assesse
 
 #### 3.4.1 Weak Concept Identification
 
-The agent employs a two-tier strategy to identify knowledge concepts requiring reinforcement. When mastery assessment data is available, the agent queries the evaluation results for student $u$ and selects all concepts $k \in K$ where the mastery level falls within the lower categories $\in \{\text{Novice}, \text{Developing}\}$. This primary strategy imposes no quantity limit, ensuring comprehensive coverage of all identified weak areas to provide thorough learning support.
-
-When mastery assessment data is unavailable, the agent falls back to analyzing the student's error history from the training set. It examines all incorrect responses $\{(e_i, K_i, y_{u,i})\}$ where $y_{u,i} = 0$ and ranks concepts by error frequency using $\text{freq}(k) = \sum_{e_i \in H_u} \mathbb{1}[k \in K_i \land y_{u,i} = 0]$. The agent then selects either the top-$N$ concepts with highest error rates or all error-prone concepts when operating in comprehensive mode, ensuring that the most problematic knowledge areas receive targeted intervention.
+The agent queries the mastery evaluation results for student $u$ and selects all concepts $k \in K$ where the mastery level falls within the lower categories $\in \{\text{Novice}, \text{Developing}\}$. This strategy imposes no quantity limit, ensuring comprehensive coverage of all identified weak areas to provide thorough learning support.
 
 #### 3.4.2 Tutoring Content Generation
 
-For each identified weak concept $k$, the agent selects up to 3 practice exercises from the training set, prioritizing unattempted questions to ensure novelty. Each selected exercise includes full question text, answer choices, and the correct answer. The agent then constructs a structured prompt (see **Appendix B**) instructing the LLM to generate tutoring content covering: (1) key learning points, (2) common misconceptions, and (3) step-by-step explanations for each example exercise.
+For each identified weak concept $k$, the agent selects 2 practice exercises from the training set, prioritizing unattempted questions to ensure novelty. Each selected exercise includes full question text, answer choices, and the correct answer. The agent then constructs a structured prompt (see **Appendix B**) instructing the LLM to generate tutoring content covering: (1) key learning points, (2) common misconceptions, and (3) step-by-step explanations for each example exercise.
 
-Using **Qwen-Plus** with temperature 0.7, the system generates comprehensive tutoring materials containing core concepts, typical error patterns, and worked solutions. The LLM response is parsed using regex patterns to extract concept-specific content, creating a structured dictionary $\mathcal{T}_u = \{(k, \text{tutoring\_content}_k)\}_{k \in \text{WeakConcepts}_u}$ mapping each weak concept to its corresponding tutoring materials.
+The system generates comprehensive tutoring materials containing core concepts, typical error patterns, and worked solutions. The LLM response is parsed using regex patterns to extract concept-specific content, creating a structured dictionary $\mathcal{T}_u = \{(k, \text{tutoring\_content}_k)\}_{k \in \text{WeakConcepts}_u}$ mapping each weak concept to its corresponding tutoring materials.
 
 #### 3.4.3 Integration into Student Agent (Short-term Memory)
 
-When the student agent encounters a test exercise $e_{new}$ with concept $k_{new}$, the system performs intelligent matching to retrieve only relevant tutoring content: $\text{Memory}_{\text{short-term}} = \mathcal{T}_u[k_{new}]$ if available, otherwise $\emptyset$. The matched content is injected into the student agent's prompt using first-person perspective transformation, converting instructional language into experiential narratives with explicit guidance on applying reviewed concepts to the current question (see **Appendix C**).
+When the student agent encounters a test exercise $e_{new}$ with concept $k_{new}$, the system performs intelligent matching to retrieve only relevant tutoring content: $\text{Memory}_{\text{short-term}} = \mathcal{T}_{u}[k_{new}]$ if available, otherwise $\emptyset$. The matched content is injected into the student agent's prompt using first-person perspective transformation, converting instructional language into experiential narratives with explicit guidance on applying reviewed concepts to the current question (see **Appendix C**).
 
 To prevent data leakage, the system maintains strict train-test isolation (90%-10% split), ensures all tutoring exercises are drawn exclusively from the training set, and provides strategic problem-solving approaches rather than direct answers. This design mimics realistic tutoring scenarios where students learn generalizable strategies and must independently apply them to new problems, ensuring pedagogical validity while maintaining evaluation integrity.
 
@@ -260,8 +249,10 @@ We conducted experiments on a real-world educational dataset containing:
 
 **Basic Statistics**:
 
-- **Students**: 1,140 learners with diverse learning profiles
-- **Exercises**: 16,775 test samples covering multiple knowledge domains
+- **Students**: 1,264 learners in the original dataset, with 1,140 students included in the training set after preprocessing
+- **Exercises**: 212 unique questions covering multiple knowledge domains in database systems
+- **Transaction Records**: 161,953 student-exercise interaction records
+- **Test Samples**: 16,775 samples used for evaluation (10% of each student's chronological history)
 - **Knowledge Concepts**: Hierarchically organized curriculum structure
 - **Answer Choices**: 2-5 options per question (single correct answer)
 - **Student Activity**: Exercise counts concentrated in 0-200 range per student
@@ -301,21 +292,24 @@ We conducted experiments on a real-world educational dataset containing:
 | **Tutoring Only**   | ❌ Not included                      | ✅ Included                           | Isolate effect of tutoring interventions                 |
 | **Both (Combined)** | ✅ Included                          | ✅ Included                           | Evaluate synergistic effects of dual-memory architecture |
 
-#### 4.1.3 Implementation Details
+#### 4.1.3 Experimental Setup
 
 **LLM Configuration**:
 
 - **Model**: Qwen-Plus (通义千问)
-- **Temperature**: 0.7 (balanced creativity and consistency)
-- **Max Context**: 8K tokens
-- **Retry Strategy**: Up to 3 attempts with exponential backoff
-- **Concurrency**: 30 parallel requests (1 per student)
+- **Temperature**: 0 (deterministic generation for reproducibility)
 
 **Agent Prompts**:
 
 - **Student Agent**: 4-task structured prompt with JSON output format
 - **Mastery Agent**: Chain-of-thought reasoning with 4-level assessment
 - **Tutoring Agent**: Instructional design prompt emphasizing solution strategies
+
+**Experimental Execution**:
+
+- All experiments were conducted using the same LLM configuration to ensure fair comparison
+- Each experimental mode (Baseline, Mastery Only, Tutoring Only, Both) was evaluated on identical test samples
+- Results are deterministic due to temperature=0 setting
 
 ---
 
@@ -414,11 +408,11 @@ We divided students into four performance quartiles:
 <div align="center">
 <img src="pictures/accuracy_comparison_by_segment.png" alt="Accuracy Comparison by Segment" width="800"/>
 
-**Figure 2: Task 4 Accuracy Comparison Across Student Performance Segments**
+**Figure 3: Task 4 Accuracy Comparison Across Student Performance Segments**
 
 </div>
 
-Figure 2 illustrates the baseline and tutoring-enhanced accuracy for each student quartile. The visualization reveals a clear trend: **lower-performing students benefit substantially more from tutoring interventions**, while high-performing students show minimal or even negative changes.
+Figure 3 illustrates the baseline and tutoring-enhanced accuracy for each student quartile. The visualization reveals a clear trend: **lower-performing students benefit substantially more from tutoring interventions**, while high-performing students show minimal or even negative changes.
 
 **Quantitative Results by Segment**:
 
@@ -440,11 +434,11 @@ Figure 2 illustrates the baseline and tutoring-enhanced accuracy for each studen
 <div align="center">
 <img src="pictures/tutoring_effect_stacked_bar.png" alt="Tutoring Effect Distribution" width="800"/>
 
-**Figure 3: Distribution of Tutoring Effect by Student Segment**
+**Figure 4: Distribution of Tutoring Effect by Student Segment**
 
 </div>
 
-Figure 3 presents the proportion of students who improved, remained unchanged, or declined after tutoring intervention. The stacked bar chart clearly demonstrates that **tutoring effectiveness is inversely correlated with baseline performance**:
+Figure 4 presents the proportion of students who improved, remained unchanged, or declined after tutoring intervention. The stacked bar chart clearly demonstrates that **tutoring effectiveness is inversely correlated with baseline performance**:
 
 - **Q1 (Low performers)**: 63.1% improved, only 10.1% declined
 - **Q2 (Mid-Low performers)**: 42.6% improved, 32.0% declined
@@ -456,11 +450,11 @@ Figure 3 presents the proportion of students who improved, remained unchanged, o
 <div align="center">
 <img src="pictures/improvement_distribution_boxplot.png" alt="Improvement Distribution" width="800"/>
 
-**Figure 4: Individual Student Improvement Distribution by Segment (Box Plot)**
+**Figure 5: Individual Student Improvement Distribution by Segment (Box Plot)**
 
 </div>
 
-Figure 4 reveals substantial individual variation within each segment through box plots. Key insights:
+Figure 5 reveals substantial individual variation within each segment through box plots. Key insights:
 
 - **Q1 (Low)**: Wide distribution with positive median, indicating that while most low performers benefit, the magnitude varies considerably (IQR: ~0.15)
 - **Q2 (Mid-Low)**: Median near zero with high variance, showing mixed effectiveness
@@ -526,7 +520,7 @@ Our comprehensive ablation study across four experimental conditions reveals dis
 - **Primary benefit**: Immediate problem-solving (+1.62% answer accuracy on average)
 - **Mechanism**: Just-in-time worked examples and solution strategies
 - **Best for**: Low-performing students (Q1: +6.8% improvement) and targeted skill reinforcement
-- **Limitation**: No significant impact on metacognitive awareness (-0.89%); ineffective or counterproductive for high performers (Q4: -1.8%)
+- **Limitation**: No significant **impact** on metacognitive awareness (-0.89%); ineffective or counterproductive for high performers (Q4: -1.8%)
 - **Key finding**: Tutoring effectiveness is **inversely correlated with baseline ability** - 63.1% of low performers improved vs. only 2.8% of high performers
 
 **Combined Dual-Memory Architecture**:
